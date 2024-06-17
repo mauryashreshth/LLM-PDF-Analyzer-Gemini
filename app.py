@@ -12,13 +12,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-flag = True
 
-try:
-    genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-except:
-    flag = False
-    genai.configure(api_key=st.secrets["api_key"])
+
+genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+
 
 FAISS_INDEX_PATH = "faiss_index"
 
@@ -47,10 +44,8 @@ def get_text_chunks(text):
 
 
 def get_vector_store(text_chunks):
-    if flag:
-        embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-    else:
-        embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=st.secrets["api_key"])
+
+    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
     print(f"Generating embeddings for text chunks: {text_chunks}")
     if text_chunks:
         vector_store = FAISS.from_texts(text_chunks, embedding=embeddings)
@@ -66,10 +61,8 @@ def get_conversational_chain():
     Question: \n{question}\n
     Answer:
     """
-    if flag:
-        model = ChatGoogleGenerativeAI(model="gemini-1.5-pro-latest", temperature=0.6)
-    else:
-        model = ChatGoogleGenerativeAI(model="gemini-1.5-pro-latest", temperature=0.6, google_api_key=st.secrets["api_key"])
+
+    model = ChatGoogleGenerativeAI(model="gemini-1.5-pro-latest", temperature=0.6)
 
     prompt = PromptTemplate(
         template=prompt_template, input_variables=["context", "question"]
@@ -79,10 +72,7 @@ def get_conversational_chain():
 
 
 def user_input(user_question):
-    if flag:
-        embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-    else:
-        embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=st.secrets["api_key"])
+    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
     try:
         new_db = FAISS.load_local(
             FAISS_INDEX_PATH, embeddings, allow_dangerous_deserialization=True
@@ -108,16 +98,16 @@ def main():
     if "last_response" not in st.session_state:
         st.session_state["last_response"] = ""
 
-    with st.form(key='question_form'):
+    with st.form(key="question_form"):
         col1, col2 = st.columns([4, 1])
         with col1:
             user_question = st.text_input("Ask a Question from the PDF Files")
         with col2:
-            reset_button = st.form_submit_button(label='Reset')
+            reset_button = st.form_submit_button(label="Reset")
 
         col3, col4 = st.columns([1, 1])
         with col3:
-            submit_button = st.form_submit_button(label='Submit')
+            submit_button = st.form_submit_button(label="Submit")
 
         if submit_button and user_question:
             user_input(user_question)
@@ -134,7 +124,9 @@ def main():
         )
         if st.button("Submit & Process"):
             with st.spinner("Processing..."):
-                st.session_state["last_response"] = ""  # Reset the response on new file upload
+                st.session_state["last_response"] = (
+                    ""  # Reset the response on new file upload
+                )
                 raw_text = get_pdf_text(pdf_docs)
 
                 # Debug: Print raw text to ensure it is extracted correctly
