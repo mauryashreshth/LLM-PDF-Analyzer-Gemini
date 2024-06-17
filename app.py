@@ -108,11 +108,22 @@ def main():
     if "last_response" not in st.session_state:
         st.session_state["last_response"] = ""
 
-    user_question = st.text_input("Ask a Question from the PDF Files")
-    if user_question:
-        user_input(user_question)
-    else:
-        st.write("Reply: ", st.session_state["last_response"])
+    with st.form(key='question_form'):
+        col1, col2 = st.columns([4, 1])
+        with col1:
+            user_question = st.text_input("Ask a Question from the PDF Files")
+        with col2:
+            reset_button = st.form_submit_button(label='Reset')
+
+        col3, col4 = st.columns([1, 1])
+        with col3:
+            submit_button = st.form_submit_button(label='Submit')
+
+        if submit_button and user_question:
+            user_input(user_question)
+        elif reset_button:
+            st.session_state["last_response"] = ""
+            st.experimental_rerun()
 
     with st.sidebar:
         st.title("Menu:")
@@ -124,7 +135,6 @@ def main():
         if st.button("Submit & Process"):
             with st.spinner("Processing..."):
                 st.session_state["last_response"] = ""  # Reset the response on new file upload
-                user_question = ""  # Reset the question input box
                 raw_text = get_pdf_text(pdf_docs)
 
                 # Debug: Print raw text to ensure it is extracted correctly
