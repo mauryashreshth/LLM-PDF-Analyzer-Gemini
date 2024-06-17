@@ -27,9 +27,9 @@ def get_pdf_text(pdf_docs):
         pdf_reader = PdfReader(pdf)
         for page in pdf_reader.pages:
             extracted_text = page.extract_text()
-            print(f"Extracted text from page: {extracted_text}")
+            # print(f"Extracted text from page: {extracted_text}")
             text += extracted_text if extracted_text else ""
-    print(f"Final extracted text: {text}")
+    # print(f"Final extracted text: {text}")
     return text
 
 
@@ -39,14 +39,14 @@ def get_text_chunks(text):
         return []
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=10000, chunk_overlap=1000)
     chunks = text_splitter.split_text(text)
-    print(f"Generated text chunks: {chunks}")
+    # print(f"Generated text chunks: {chunks}")
     return chunks
 
 
 def get_vector_store(text_chunks):
 
     embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-    print(f"Generating embeddings for text chunks: {text_chunks}")
+    # print(f"Generating embeddings for text chunks: {text_chunks}")
     if text_chunks:
         vector_store = FAISS.from_texts(text_chunks, embedding=embeddings)
     if not os.path.exists(FAISS_INDEX_PATH):
@@ -130,12 +130,12 @@ def main():
                 raw_text = get_pdf_text(pdf_docs)
 
                 # Debug: Print raw text to ensure it is extracted correctly
-                print("Raw Text:", raw_text)
+                # print("Raw Text:", raw_text)
 
                 text_chunks = get_text_chunks(raw_text)
 
                 # Debug: Print text chunks to ensure they are created correctly
-                print("Text Chunks:", text_chunks)
+                # print("Text Chunks:", text_chunks)
                 if text_chunks:
                     get_vector_store(text_chunks)
                     st.success("Done!")
