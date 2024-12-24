@@ -113,7 +113,7 @@ def main():
             user_input(user_question)
         elif reset_button:
             st.session_state["last_response"] = ""
-            st.experimental_rerun()
+            st.rerun()
 
     with st.sidebar:
         st.title("Menu:")
