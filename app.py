@@ -1,31 +1,37 @@
 import streamlit as st
 from pypdf import PdfReader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
 import os
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
-import google.generativeai as genai
-from langchain_community.vectorstores import FAISS
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.chains.question_answering import load_qa_chain
-from langchain.prompts import PromptTemplate
+import time
+import warnings
 from dotenv import load_dotenv
 
-# Load environment variables (API Key)
+# --- 1. Suppress Warnings ---
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+
+# --- 2. Imports ---
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.vectorstores import FAISS
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_google_genai import ChatGoogleGenerativeAI
+
+# Try importing from classic, fallback to standard if needed
+try:
+    from langchain_classic.chains.question_answering import load_qa_chain
+except ImportError:
+    from langchain.chains.question_answering import load_qa_chain
+
+from langchain_core.prompts import PromptTemplate
+
 load_dotenv()
 
-# Configure the Gemini API
-genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+if "GOOGLE_API_KEY" not in os.environ:
+    st.error("Error: GOOGLE_API_KEY not found. Please check your .env file.")
 
-# Define the path where the FAISS index will be saved
 FAISS_INDEX_PATH = "faiss_index"
 
-# --- PDF Processing Functions ---
-
 def get_pdf_text(pdf_docs):
-    """Extracts text from a list of uploaded PDF files."""
     text = ""
     for pdf in pdf_docs:
-        # st.file_uploader uses a temporary file, we need to ensure the pointer is at the start
         pdf.seek(0)
         pdf_reader = PdfReader(pdf)
         for page in pdf_reader.pages:
@@ -34,157 +40,119 @@ def get_pdf_text(pdf_docs):
     return text
 
 def get_text_chunks(text):
-    """Splits the raw text into manageable chunks for embedding."""
-    if text.strip() == "":
+    if not text.strip():
         st.warning("No text found to split into chunks.")
         return []
-    # Using a large chunk size/overlap for large documents, adjust as needed.
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=10000, chunk_overlap=1000)
+    
+    # --- CRITICAL FIX: Smaller Chunks ---
+    # Reduced from 10,000 to 1,000 to save token usage
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=1000, 
+        chunk_overlap=200
+    )
     chunks = text_splitter.split_text(text)
     return chunks
 
-# --- CORE FIX: Caching Function ---
-
 def get_vector_store(text_chunks):
-    """
-    Creates and saves the FAISS vector store.
-    CRITICALLY: It only calls the Gemini Embeddings API if the index does not exist.
-    """
-    # 1. Check if the index already exists locally
-    if os.path.exists(FAISS_INDEX_PATH):
-        st.success("FAISS index found locally. Skipping API call.")
+    if not text_chunks:
         return
 
-    # 2. If it doesn't exist, proceed with API call
-    if text_chunks:
-        st.info("No existing index found. Generating embeddings and saving vector store (one-time operation)...")
-        
-        # Initialize Embeddings model (API call starts here)
-        embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-        
-        # Create Vector Store
+    try:
+        st.info("Generating embeddings locally (this may take a moment)...")
+        embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
         vector_store = FAISS.from_texts(text_chunks, embedding=embeddings)
-        
-        # Ensure the directory exists
-        if not os.path.exists(FAISS_INDEX_PATH):
-            os.makedirs(FAISS_INDEX_PATH)
-            
-        # Save the index locally
         vector_store.save_local(FAISS_INDEX_PATH)
-        st.success(f"Successfully created and saved new FAISS index to {FAISS_INDEX_PATH}!")
-    else:
-        st.warning("Cannot create vector store: No text chunks provided.")
-
-
-# --- Conversational Chain Functions ---
+        st.success("Index successfully updated! (Optimized for Free Tier)")
+        
+    except Exception as e:
+        st.error(f"Failed to create vector store: {str(e)}")
 
 def get_conversational_chain():
-    """Sets up the LangChain QA chain using Gemini 1.5 Pro."""
-    prompt_template = """Answer the question as detailed as possible from the provided context,
-    make sure to provide all the details, if the answer is not in the provided context just say, "answer is not available in the context", don't provide wrong information\n\n
+    prompt_template = """
+    Answer the question as detailed as possible from the provided context.
+    If the answer is not in the provided context, just say "answer is not available in the context".
+    
     Context: \n {context}\n
     Question: \n{question}\n
+    
     Answer:
     """
 
-    model = ChatGoogleGenerativeAI(model="gemini-1.5-pro-latest", temperature=0.6)
+    # Using 'gemini-flash-latest' (1.5 Flash) which usually has the highest RPM limit
+    # If this fails, try "gemini-1.5-pro-latest"
+    model = ChatGoogleGenerativeAI(model="models/gemini-flash-latest", temperature=0.3)
 
     prompt = PromptTemplate(
         template=prompt_template, input_variables=["context", "question"]
     )
+    
     chain = load_qa_chain(model, chain_type="stuff", prompt=prompt)
     return chain
 
-
 def user_input(user_question):
-    """Retrieves context from the vector store and generates the response."""
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
     
-    # Check if the FAISS index exists before attempting to load
     if not os.path.exists(FAISS_INDEX_PATH):
-        st.error("FAISS index not found. Please upload and process the PDFs first.")
+        st.error("Index not found. Please upload PDFs and process them first.")
         return
 
     try:
-        # Load the local index
-        new_db = FAISS.load_local(
-            FAISS_INDEX_PATH, embeddings, allow_dangerous_deserialization=True
-        )
+        new_db = FAISS.load_local(FAISS_INDEX_PATH, embeddings, allow_dangerous_deserialization=True)
         
-        # Search for relevant documents
-        docs = new_db.similarity_search(user_question)
+        # --- CRITICAL FIX: Retrieve fewer docs ---
+        # Reduced from k=10 to k=5 to keep total tokens low
+        docs = new_db.similarity_search(user_question, k=5)
         
-        # Get the conversational chain
         chain = get_conversational_chain()
         
-        # Run the chain
-        response = chain(
-            {"input_documents": docs, "question": user_question},
-            return_only_outputs=True,
-        )
-        
-        st.session_state["last_response"] = response["output_text"]
-        st.write("Reply: ", response["output_text"])
+        # --- RETRY LOGIC ---
+        # If Google says "Wait 20s", we wait 20s automatically.
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                with st.spinner("Asking Gemini..."):
+                    response = chain.invoke(
+                        {"input_documents": docs, "question": user_question},
+                        return_only_outputs=True
+                    )
+                st.write("Reply: ", response["output_text"])
+                break # Success
+                
+            except Exception as e:
+                error_str = str(e)
+                if "429" in error_str:
+                    wait_time = 20 # The error explicitly asked for ~19s
+                    st.warning(f"Free Tier Limit Hit. Waiting {wait_time}s before retrying... (Attempt {attempt+1}/{max_retries})")
+                    time.sleep(wait_time)
+                else:
+                    st.error(f"Error: {e}")
+                    break
         
     except Exception as e:
-        # Catch any errors during loading or chain execution
-        st.error(f"An error occurred during query processing: {e}")
-        print(f"Error details: {e}")
-
-
-# --- Streamlit Main App ---
+        st.error(f"System Error: {e}")
 
 def main():
-    st.set_page_config("Chat with Multiple PDFs")
-    st.header("Chat with PDF using Gemini 🤖")
+    st.set_page_config("Chat with Multiple PDFs", layout="wide")
+    st.header("Chat with PDF using Gemini (Free Tier Optimized) 🤖")
 
-    if "last_response" not in st.session_state:
-        st.session_state["last_response"] = ""
-
-    # Question/Chat form
-    with st.form(key="question_form"):
-        col1, col2 = st.columns([4, 1])
-        with col1:
-            user_question = st.text_input("Ask a Question from the PDF Files")
-        with col2:
-            reset_button = st.form_submit_button(label="Reset")
-
-        col3, col4 = st.columns([1, 1])
-        with col3:
-            submit_button = st.form_submit_button(label="Submit")
-
-        if submit_button and user_question:
-            user_input(user_question)
-        elif reset_button:
-            st.session_state["last_response"] = ""
-            st.rerun()
-
-    # Sidebar for File Upload and Processing
     with st.sidebar:
         st.title("Menu: 📄")
-        pdf_docs = st.file_uploader(
-            "Upload your PDF Files and Click on Submit & Process!",
-            accept_multiple_files=True,
-            type="pdf",
-        )
+        pdf_docs = st.file_uploader("Upload PDF Files", accept_multiple_files=True, type="pdf")
+        
         if st.button("Submit & Process"):
             if pdf_docs:
                 with st.spinner("Processing..."):
-                    # 1. Extract Text
                     raw_text = get_pdf_text(pdf_docs)
-                    
-                    # 2. Split Text into Chunks
                     text_chunks = get_text_chunks(raw_text)
-
-                    # 3. Create/Load Vector Store (Quota-friendly)
                     if text_chunks:
                         get_vector_store(text_chunks)
-                        st.success("Indexing complete! You can now ask questions.")
-                    else:
-                        st.warning("Could not extract any meaningful text.")
             else:
-                 st.warning("Please upload at least one PDF document.")
+                st.warning("Please upload at least one PDF.")
 
+    user_question = st.text_input("Ask a Question from the PDF Files")
+
+    if user_question:
+        user_input(user_question)
 
 if __name__ == "__main__":
     main()

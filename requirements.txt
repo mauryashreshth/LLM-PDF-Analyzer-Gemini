@@ -1,8 +1,10 @@
-streamlit
-google-generativeai
-python-dotenv
 langchain
 langchain-community
+langchain-core
+langchain-google-genai>=4.0.0
+langchain-text-splitters
+streamlit
 pypdf
 faiss-cpu
-langchain_google_genai
+python-dotenv
+sentence-transformers
