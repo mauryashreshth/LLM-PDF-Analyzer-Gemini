@@ -36,11 +36,14 @@ jobs:
         username: ubuntu
         key: ${{ secrets.EC2_KEY }}
         script: |
-          # Stop and remove the old container (if it exists)
+          # --- NEW: Log in to Docker Hub on the EC2 server ---
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+
+          # Stop and remove the old container (Ignore errors if it doesn't exist)
           docker stop pdf-app || true
           docker rm pdf-app || true
           
-          # Pull the latest image we just built
+          # Pull the latest image
           docker pull ${{ secrets.DOCKERHUB_USERNAME }}/gemini-pdf-app:latest
           
           # Run the new container
