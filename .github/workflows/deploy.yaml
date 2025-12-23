@@ -1,0 +1,51 @@
+name: Deploy to AWS
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    # 1. Check out your code
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    # 2. Login to Docker Hub
+    - name: Login to Docker Hub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    # 3. Build and Push Docker Image
+    - name: Build and push
+      uses: docker/build-push-action@v4
+      with:
+        context: .
+        push: true
+        tags: ${{ secrets.DOCKERHUB_USERNAME }}/gemini-pdf-app:latest
+
+    # 4. Deploy to AWS EC2
+    - name: Deploy to EC2
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ubuntu
+        key: ${{ secrets.EC2_KEY }}
+        script: |
+          # Stop and remove the old container (if it exists)
+          docker stop pdf-app || true
+          docker rm pdf-app || true
+          
+          # Pull the latest image we just built
+          docker pull ${{ secrets.DOCKERHUB_USERNAME }}/gemini-pdf-app:latest
+          
+          # Run the new container
+          docker run -d \
+            --name pdf-app \
+            -p 8501:8501 \
+            -e GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }} \
+            ${{ secrets.DOCKERHUB_USERNAME }}/gemini-pdf-app:latest
