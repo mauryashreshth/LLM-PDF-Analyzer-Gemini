@@ -9,9 +9,15 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements and install python dependencies
 COPY requirements.txt .
+
+# 1. Install CPU-only PyTorch first. 
+# This prevents sentence-transformers from downloading the huge GPU version.
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+
+# 2. Install the rest of the requirements
 RUN pip install --no-cache-dir -r requirements.txt
+
 
 # Copy the rest of the application
 COPY . .

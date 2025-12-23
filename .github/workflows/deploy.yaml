@@ -39,6 +39,9 @@ jobs:
           # --- NEW: Log in to Docker Hub on the EC2 server ---
           echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
 
+          # This deletes all unused images/containers to make room
+          docker system prune -a -f
+
           # Stop and remove the old container (Ignore errors if it doesn't exist)
           docker stop pdf-app || true
           docker rm pdf-app || true
